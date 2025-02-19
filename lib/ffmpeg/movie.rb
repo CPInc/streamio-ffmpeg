@@ -93,7 +93,7 @@ module FFMPEG
 
           @video_stream = "#{video_stream[:codec_name]} (#{video_stream[:profile]}) (#{video_stream[:codec_tag_string]} / #{video_stream[:codec_tag]}), #{colorspace}, #{resolution} [SAR #{sar} DAR #{dar}]"
 
-          @rotation = detect_rotation(video_stream)
+          @rotation = -detect_rotation(video_stream)
         end
 
         @audio_streams = audio_streams.map do |stream|
@@ -152,11 +152,11 @@ module FFMPEG
     end
 
     def width
-      rotation.nil? || rotation == -90 || rotation == 180 ? @width : @height
+      rotation.nil? || rotation == 180 ? @width : @height;
     end
 
     def height
-      rotation.nil? || rotation == -90 || rotation == 180 ? @height : @width
+      rotation.nil? || rotation == 180 ? @height : @width;
     end
 
     def resolution
