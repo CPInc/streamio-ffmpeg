@@ -229,7 +229,7 @@ module FFMPEG
           end
         end
       end
-      
+
       # No rotation detected
       nil
     end
