@@ -210,35 +210,27 @@ module FFMPEG
       if stream.key?(:tags) && stream[:tags].key?(:rotate)
         return stream[:tags][:rotate].to_i
       end
-      
+
       # Check for rotation in side_data_list (FFmpeg 6.1.2 style)
       if stream.key?(:side_data_list) && stream[:side_data_list].is_a?(Array)
         stream[:side_data_list].each do |side_data|
           if side_data[:side_data_type] == 'Display Matrix' && side_data.key?(:rotation)
             raw_rotation = side_data[:rotation].to_i
-            
-            # Convert FFmpeg 6.1.2 rotation values to match FFmpeg 2.6.9 values
+
+            # Keep consistent with FFmpeg 2.6.9 behavior
             case raw_rotation
             when -90
-              return 90   # Important: return 90 for -90 to match 2.6.9 behavior
+              return 90   # This will swap width/height as expected
             when 90
-              return 270  # Convert to equivalent FFmpeg 2.6.9 value
+              return 270  # This will also swap width/height as expected
             when -180, 180
-              return 180
+              return 180  # This will keep original dimensions
             end
           end
         end
       end
       
-      # Check aspect ratios as last resort
-      if stream[:width] && stream[:height] && stream[:width] < stream[:height]
-        return 0  # Already in portrait, no rotation needed
-      elsif stream[:width] && stream[:height] && 
-            ((stream[:sample_aspect_ratio] != '1:1') || 
-             (stream[:width] > stream[:height] && stream[:display_aspect_ratio]))
-        return 90
-      end
-      
+      # No rotation detected
       nil
     end
 
