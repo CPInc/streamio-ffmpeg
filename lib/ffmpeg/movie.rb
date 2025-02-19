@@ -93,8 +93,12 @@ module FFMPEG
 
           @video_stream = "#{video_stream[:codec_name]} (#{video_stream[:profile]}) (#{video_stream[:codec_tag_string]} / #{video_stream[:codec_tag]}), #{colorspace}, #{resolution} [SAR #{sar} DAR #{dar}]"
 
-          @rotation = if video_stream.key?(:tags) and video_stream[:tags].key?(:rotate)
+          @rotation = if video_stream.key?(:tags) && video_stream[:tags].key?(:rotate)
+                        # Handle rotation from tags (FFmpeg 2.6.9 style)
                         video_stream[:tags][:rotate].to_i
+                      elsif video_stream.key?(:side_data_list)
+                        # Handle rotation from Display Matrix (FFmpeg 6.1.2 style)
+                        detect_rotation_from_side_data(video_stream[:side_data_list])
                       else
                         nil
                       end
@@ -208,6 +212,31 @@ module FFMPEG
     end
 
     protected
+
+    def detect_rotation_from_side_data(side_data_list)
+      return nil unless side_data_list.is_a?(Array)
+
+      side_data_list.each do |side_data|
+        if side_data[:side_data_type] == 'Display Matrix' && side_data.key?(:rotation)
+          # Convert from counter-clockwise to clockwise rotation
+          raw_rotation = -side_data[:rotation].to_i
+          # Normalize to 0, 90, 180, 270
+          normalized = raw_rotation % 360
+          normalized += 360 if normalized < 0
+
+          case normalized
+          when 0..89 then return 0
+          when 90..179 then return 90
+          when 180..269 then return 180
+          else return 270
+          end
+        end
+      end
+
+      # No rotation found
+      nil
+    end
+
     def aspect_from_dar
       calculate_aspect(dar)
     end
