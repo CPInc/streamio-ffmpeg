@@ -226,7 +226,7 @@ module FFMPEG
           if side_data[:side_data_type] == 'Display Matrix' && side_data.key?(:rotation)
             raw_rotation = side_data[:rotation].to_i
 
-             Rails.logger.debug("=====Display Matrix Rotation #{raw_rotation}")
+             FFMPEG.logger.info("=====Display Matrix Rotation #{raw_rotation}")
 
             # Map display matrix rotation to match 2.6.9 style
             case raw_rotation
