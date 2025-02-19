@@ -151,9 +151,11 @@ module FFMPEG
       not remote?
     end
 
+    # Override these methods to account for rotation, but respect sign
     def width
-      # If rotated 90° or 270°, swap dimensions
-      if rotation == 90 || rotation == 270
+      # For portrait orientation, swap dimensions
+      # -90 and 90 are both portrait orientations
+      if rotation.abs == 90
         @height
       else
         @width
@@ -161,8 +163,9 @@ module FFMPEG
     end
 
     def height
-      # If rotated 90° or 270°, swap dimensions
-      if rotation == 90 || rotation == 270
+      # For portrait orientation, swap dimensions
+      # -90 and 90 are both portrait orientations
+      if rotation.abs == 90
         @width
       else
         @height
@@ -170,17 +173,13 @@ module FFMPEG
     end
 
     def resolution
-      "#{width}x#{height}" unless width.nil? || height.nil?
+      unless width.nil? or height.nil?
+        "#{width}x#{height}"
+      end
     end
 
     def calculated_aspect_ratio
-      if rotation == 90 || rotation == 270
-        # Invert aspect ratio for portrait videos
-        ar = aspect_from_dimensions
-        ar ? (1.0 / ar) : nil
-      else
-        aspect_from_dar || aspect_from_dimensions
-      end
+      aspect_from_dar || aspect_from_dimensions
     end
 
     def calculated_pixel_aspect_ratio
@@ -220,31 +219,21 @@ module FFMPEG
     protected
 
     def detect_rotation(stream)
-      # First check side_data_list for Display Matrix (FFmpeg 6.1.2 style)
+      # For FFmpeg 6.1.2 - preserve raw rotation value from Display Matrix
       if stream.key?(:side_data_list) && stream[:side_data_list].is_a?(Array)
         stream[:side_data_list].each do |side_data|
           if side_data[:side_data_type] == 'Display Matrix' && side_data.key?(:rotation)
-            raw_rotation = side_data[:rotation].to_i
-
-            # Map display matrix rotation to match 2.6.9 style
-            case raw_rotation
-            when -90
-              return 90   # Portrait video
-            when 90
-              return 270  # Portrait video 
-            when -180, 180
-              return 180  # Upside down
-            end
+            # Keep the raw value with sign (-90, 90, 180, -180)
+            return side_data[:rotation].to_i
           end
         end
       end
-
-      # Then check tags (FFmpeg 2.6.9 style)
+      
+      # For FFmpeg 2.6.9
       if stream.key?(:tags) && stream[:tags].key?(:rotate)
         return stream[:tags][:rotate].to_i
       end
-
-      # No rotation metadata found
+      
       nil
     end
 
@@ -264,13 +253,8 @@ module FFMPEG
     end
 
     def aspect_from_dimensions
-      w = width.to_f
-      h = height.to_f
-      if w > 0 && h > 0
-        w / h
-      else
-        nil
-      end
+      aspect = width.to_f / height.to_f
+      aspect.nan? ? nil : aspect
     end
 
     def fix_encoding(output)
