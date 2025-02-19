@@ -93,15 +93,7 @@ module FFMPEG
 
           @video_stream = "#{video_stream[:codec_name]} (#{video_stream[:profile]}) (#{video_stream[:codec_tag_string]} / #{video_stream[:codec_tag]}), #{colorspace}, #{resolution} [SAR #{sar} DAR #{dar}]"
 
-          @rotation = if video_stream.key?(:tags) && video_stream[:tags].key?(:rotate)
-                        # Handle rotation from tags (FFmpeg 2.6.9 style)
-                        video_stream[:tags][:rotate].to_i
-                      elsif video_stream.key?(:side_data_list)
-                        # Handle rotation from Display Matrix (FFmpeg 6.1.2 style)
-                        detect_rotation_from_side_data(video_stream[:side_data_list])
-                      else
-                        nil
-                      end
+          @rotation = detect_rotation(video_stream)
         end
 
         @audio_streams = audio_streams.map do |stream|
@@ -213,28 +205,60 @@ module FFMPEG
 
     protected
 
-    def detect_rotation_from_side_data(side_data_list)
-      return nil unless side_data_list.is_a?(Array)
-
-      side_data_list.each do |side_data|
-        if side_data[:side_data_type] == 'Display Matrix' && side_data.key?(:rotation)
-          # Convert from counter-clockwise to clockwise rotation
-          raw_rotation = -side_data[:rotation].to_i
-          # Normalize to 0, 90, 180, 270
-          normalized = raw_rotation % 360
-          normalized += 360 if normalized < 0
-
-          case normalized
-          when 0..89 then return 0
-          when 90..179 then return 90
-          when 180..269 then return 180
-          else return 270
+    def detect_rotation(stream)
+      # Check Side Data Display Matrix first (FFmpeg 6.1.2)
+      raw_rotation = nil
+      if stream.key?(:side_data_list) && stream[:side_data_list].is_a?(Array)
+        stream[:side_data_list].each do |side_data|
+          if side_data[:side_data_type] == 'Display Matrix' && side_data.key?(:rotation)
+            raw_rotation = side_data[:rotation].to_i
+            break
           end
         end
       end
 
-      # No rotation found
-      nil
+      # If we found rotation in display matrix, handle it specially for iPhone
+      if raw_rotation
+        case raw_rotation
+        when -90
+          return 270  # Maps to transpose=2 in ffmpeg
+        when 90
+          return 90   # Maps to transpose=1 in ffmpeg
+        when -180, 180
+          return 180
+        end
+      end
+
+      # Check rotation tag (FFmpeg 2.6.9 style)
+      if stream.key?(:tags) && stream[:tags].key?(:rotate)
+        rotation = stream[:tags][:rotate].to_i
+        return normalize_rotation(rotation)
+      end
+
+      # Check aspect ratios as last resort
+      sar = stream[:sample_aspect_ratio]
+      dar = stream[:display_aspect_ratio]
+      width = stream[:width].to_i
+      height = stream[:height].to_i
+
+      if width > 0 && height > 0
+        if sar != '1:1' || (width > height && dar&.split(':')&.map(&:to_i)&.inject(:'<'))
+          return 90
+        end
+      end
+
+      0
+    end
+
+    def normalize_rotation(rotation)
+      rotation = rotation % 360
+      rotation += 360 if rotation < 0
+      case rotation
+      when 0..89 then 0
+      when 90..179 then 90
+      when 180..269 then 180
+      else 270
+      end
     end
 
     def aspect_from_dar
