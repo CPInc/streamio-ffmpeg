@@ -5,7 +5,7 @@ require 'net/http'
 
 module FFMPEG
   class Movie
-    attr_reader :path, :duration, :time, :bitrate, :rotation, :creation_time
+    attr_reader :path, :duration, :time, :bitrate, :rotation, :side_data_rotation, :creation_time
     attr_reader :video_stream, :video_codec, :video_bitrate, :colorspace, :width, :height, :sar, :dar, :frame_rate
     attr_reader :audio_streams, :audio_stream, :audio_codec, :audio_bitrate, :audio_sample_rate, :audio_channels, :audio_tags
     attr_reader :container
@@ -93,7 +93,8 @@ module FFMPEG
 
           @video_stream = "#{video_stream[:codec_name]} (#{video_stream[:profile]}) (#{video_stream[:codec_tag_string]} / #{video_stream[:codec_tag]}), #{colorspace}, #{resolution} [SAR #{sar} DAR #{dar}]"
 
-          @rotation = -detect_rotation(video_stream)
+          @side_data_rotation = get_side_data_rotation(video_stream)
+          @rotation = detect_rotation(video_stream)
         end
 
         @audio_streams = audio_streams.map do |stream|
@@ -152,11 +153,11 @@ module FFMPEG
     end
 
     def width
-      rotation.nil? || rotation == 180 ? @width : @height;
+      rotation.nil? || rotation == 180 || side_data_rotation == -90 ? @width : @height
     end
 
     def height
-      rotation.nil? || rotation == 180 ? @height : @width;
+      rotation.nil? || rotation == 180 || side_data_rotation == -90 ? @height : @width
     end
 
     def resolution
@@ -205,8 +206,7 @@ module FFMPEG
 
     protected
 
-    def detect_rotation(stream)
-      # For FFmpeg 6.1.2 - preserve raw rotation value from Display Matrix
+    def get_side_data_rotation(stream)
       if stream.key?(:side_data_list) && stream[:side_data_list].is_a?(Array)
         stream[:side_data_list].each do |side_data|
           if side_data[:side_data_type] == 'Display Matrix' && side_data.key?(:rotation)
@@ -216,10 +216,17 @@ module FFMPEG
         end
       end
 
+      nil
+    end
+
+    def detect_rotation(stream)
       # For FFmpeg 2.6.9
       if stream.key?(:tags) && stream[:tags].key?(:rotate)
         return stream[:tags][:rotate].to_i
       end
+
+      # For FFmpeg 6.1.2 - preserve raw rotation value from Display Matrix
+      return -side_data_rotation if get_side_data_rotation(stream)
 
       nil
     end
