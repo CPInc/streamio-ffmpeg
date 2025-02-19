@@ -206,59 +206,40 @@ module FFMPEG
     protected
 
     def detect_rotation(stream)
-      # Check Side Data Display Matrix first (FFmpeg 6.1.2)
-      raw_rotation = nil
+      # First try to detect from tags (FFmpeg 2.6.9 style)
+      if stream.key?(:tags) && stream[:tags].key?(:rotate)
+        return stream[:tags][:rotate].to_i
+      end
+      
+      # Check for rotation in side_data_list (FFmpeg 6.1.2 style)
       if stream.key?(:side_data_list) && stream[:side_data_list].is_a?(Array)
         stream[:side_data_list].each do |side_data|
           if side_data[:side_data_type] == 'Display Matrix' && side_data.key?(:rotation)
             raw_rotation = side_data[:rotation].to_i
-            break
+            
+            # Convert FFmpeg 6.1.2 rotation values to match FFmpeg 2.6.9 values
+            case raw_rotation
+            when -90
+              return 90   # Important: return 90 for -90 to match 2.6.9 behavior
+            when 90
+              return 270  # Convert to equivalent FFmpeg 2.6.9 value
+            when -180, 180
+              return 180
+            end
           end
         end
       end
-
-      # If we found rotation in display matrix, handle it specially for iPhone
-      if raw_rotation
-        case raw_rotation
-        when -90
-          return 270  # Maps to transpose=2 in ffmpeg
-        when 90
-          return 90   # Maps to transpose=1 in ffmpeg
-        when -180, 180
-          return 180
-        end
-      end
-
-      # Check rotation tag (FFmpeg 2.6.9 style)
-      if stream.key?(:tags) && stream[:tags].key?(:rotate)
-        rotation = stream[:tags][:rotate].to_i
-        return normalize_rotation(rotation)
-      end
-
+      
       # Check aspect ratios as last resort
-      sar = stream[:sample_aspect_ratio]
-      dar = stream[:display_aspect_ratio]
-      width = stream[:width].to_i
-      height = stream[:height].to_i
-
-      if width > 0 && height > 0
-        if sar != '1:1' || (width > height && dar&.split(':')&.map(&:to_i)&.inject(:'<'))
-          return 90
-        end
+      if stream[:width] && stream[:height] && stream[:width] < stream[:height]
+        return 0  # Already in portrait, no rotation needed
+      elsif stream[:width] && stream[:height] && 
+            ((stream[:sample_aspect_ratio] != '1:1') || 
+             (stream[:width] > stream[:height] && stream[:display_aspect_ratio]))
+        return 90
       end
-
-      0
-    end
-
-    def normalize_rotation(rotation)
-      rotation = rotation % 360
-      rotation += 360 if rotation < 0
-      case rotation
-      when 0..89 then 0
-      when 90..179 then 90
-      when 180..269 then 180
-      else 270
-      end
+      
+      nil
     end
 
     def aspect_from_dar
