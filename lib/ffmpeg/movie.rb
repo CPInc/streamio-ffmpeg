@@ -151,25 +151,12 @@ module FFMPEG
       not remote?
     end
 
-    # Override these methods to account for rotation, but respect sign
     def width
-      # For portrait orientation, swap dimensions
-      # -90 and 90 are both portrait orientations
-      if rotation.abs == 90
-        @height
-      else
-        @width
-      end
+      rotation.nil? || rotation == 180 ? @width : @height;
     end
 
     def height
-      # For portrait orientation, swap dimensions
-      # -90 and 90 are both portrait orientations
-      if rotation.abs == 90
-        @width
-      else
-        @height
-      end
+      rotation.nil? || rotation == 180 ? @height : @width;
     end
 
     def resolution
@@ -228,14 +215,15 @@ module FFMPEG
           end
         end
       end
-      
+
       # For FFmpeg 2.6.9
       if stream.key?(:tags) && stream[:tags].key?(:rotate)
         return stream[:tags][:rotate].to_i
       end
-      
+
       nil
     end
+
 
     def aspect_from_dar
       calculate_aspect(dar)
